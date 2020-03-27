@@ -70,7 +70,7 @@ class COVIDDataImporter:
             'time_series')]
         rename_dict = {x: x.split('_')[-2].title() for x in long_names}
 
-        self.full_df.rename(columns=rename_dict)
+        self.full_df.rename(columns=rename_dict, inplace=True)
 
         return self.full_df
 
