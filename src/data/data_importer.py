@@ -15,7 +15,7 @@ class COVIDDataImporter:
 
     def __init__(self, git_dir='data/raw/external/COVID-19',
                  output_path='data/processed',
-                 processed_filename='covid_processed_{date}.csv'):
+                 processed_filename='covid_processed_{scope}_{date}.csv'):
         self.git_dir = git_dir
         self.output_path = output_path
         self.processed_filename = processed_filename
@@ -48,52 +48,81 @@ class COVIDDataImporter:
                     'You have not imported the data yet. To automatically do this, turn autodownload to True.')
             else:
                 self.import_dfs()
-        self.full_df = pd.DataFrame()
+        self.us_df = pd.DataFrame()
+        self.global_df = pd.DataFrame()
+
+        scope_to_header_cols = {
+            'global': 4,
+            'us': 11
+        }
+
         for col, df in self.raw_dfs.items():
-            id_vars = df.columns[:4]
-            value_vars = df.columns[4:]
+            scope = col.split('_')[-1].lower()
+            header_n = scope_to_header_cols[scope]
+            id_vars = df.columns[:header_n]
+
+            value_vars = df.columns[header_n:]
             df = pd.melt(df, id_vars=id_vars, value_vars=value_vars,
                          var_name='Date', value_name=col)
-            df.set_index(df.columns[:5].tolist(), inplace=True)
-            self.full_df = pd.concat(
-                [self.full_df, df], axis=1)
-        return self.full_df
+            df.set_index(df.columns[:(header_n + 1)].tolist(), inplace=True)
 
-    def process_df(self):
-        if self.full_df is None:
-            raise ValueError('DataFrame has not been merged yet.')
+            if scope == 'global':
+                self.global_df = pd.concat([self.global_df, df], axis=1)
+            elif scope == 'us':
+                self.us_df = pd.concat([self.us_df, df], axis=1)
+        return self.global_df, self.us_df
 
-        self.full_df.reset_index(inplace=True)
-        self.full_df['Date'] = pd.to_datetime(self.full_df['Date'])
+    def process_dfs(self):
+        for df in [self.global_df, self.us_df]:
+            if df is None:
+                raise ValueError('DataFrame has not been merged yet.')
 
-        long_names = self.full_df.columns[self.full_df.columns.str.contains(
+            self.process_df(df)
+
+    def process_df(self, df):
+        df.reset_index(inplace=True)
+
+        df['Date'] = pd.to_datetime(self.full_df['Date'])
+
+        long_names = df.columns[df.columns.str.contains(
             'time_series')]
         rename_dict = {x: x.split('_')[-2].title() for x in long_names}
 
-        self.full_df.rename(columns=rename_dict, inplace=True)
+        df.rename(columns=rename_dict, inplace=True)
 
-        return self.full_df
+        return df
 
-    def _create_full_filename(self, dir_path):
+    def _create_full_filename(self, dir_path, scope):
         date_str = str(datetime.today())
-        fmt_dict = dict(date=date_str)
+        fmt_dict = dict(date=date_str, scope=scope)
         formatted_filename = self.processed_filename.format(**fmt_dict)
         return os.path.join(dir_path, formatted_filename)
+
+    def _return_df_by_scope_str(self, scope):
+        if scope == 'global':
+            return self.global_df
+        elif scope == 'us':
+            return self.us_df
 
     def save(self, output_path=None):
         if not output_path:
             output_path = self.output_path
-        full_output_path = self._create_full_filename(output_path)
-        self.full_df.to_csv(full_output_path)
+
+        for scope in ['us', 'global']:
+
+            full_output_path = self._create_full_filename(output_path, scope)
+            df = self._return_df_by_scope_str(scope)
+            df.to_csv(full_output_path)
 
     def load(self, input_path=None):
         if not input_path:
             input_path = self.output_path
 
-        full_input_path = self._create_full_filename(input_path)
-        self.full_df = pd.read_csv(full_input_path)
+        for scope in ['us', 'global']:
+            full_input_path = self._create_full_filename(input_path, scope)
+            setattr(self, f'{scope}_df', pd.read_csv(full_input_path))
 
-        return self.full_df
+        return self.us_df, self.global_df
 
     def process(self):
         try:
@@ -103,7 +132,7 @@ class COVIDDataImporter:
 
         self.import_dfs()
         self.melt_data()
-        self.process_df()
+        self.process_dfs()
         self.save()
         return self.full_df
 
