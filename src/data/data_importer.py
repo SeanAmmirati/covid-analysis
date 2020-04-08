@@ -80,9 +80,10 @@ class COVIDDataImporter:
             self.process_df(df)
 
     def process_df(self, df):
+        df = df[df['Date'] != 'Population']
         df.reset_index(inplace=True)
 
-        df['Date'] = pd.to_datetime(self.full_df['Date'])
+        df['Date'] = pd.to_datetime(df['Date'])
 
         long_names = df.columns[df.columns.str.contains(
             'time_series')]
